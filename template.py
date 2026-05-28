@@ -12,6 +12,7 @@ Instructions:
 import os
 import time
 from typing import Any, Callable
+from openai import OpenAI
 
 # ---------------------------------------------------------------------------
 # Estimated costs per 1K OUTPUT tokens (USD) — update if pricing changes
@@ -54,7 +55,26 @@ def call_openai(
     """
     # TODO: import OpenAI, create client, call chat.completions.create,
     #       measure start/end time, return (response_text, latency)
-    raise NotImplementedError("Implement call_openai")
+    client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+    start_time = time.time()
+    response = client.responses.create(
+        model = model,
+        input = [{'role' : 'user' , 'content' : prompt}],
+        temperature = temperature,
+        top_p = top_p,
+        max_tokens = max_tokens
+    )
+    end_time = time.time()
+
+    latency = end_time - start_time
+
+    if latency <= 0:
+        latency = 0.0000001
+
+    response_text = response.output_text
+    return response_text, latency
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +82,7 @@ def call_openai(
 # ---------------------------------------------------------------------------
 def call_openai_mini(
     prompt: str,
+    model: str = OPENAI_MINI_MODEL,
     temperature: float = 0.7,
     top_p: float = 0.9,
     max_tokens: int = 256,
@@ -83,7 +104,13 @@ def call_openai_mini(
         Reuse call_openai() by passing model=OPENAI_MINI_MODEL.
     """
     # TODO: call call_openai with model=OPENAI_MINI_MODEL
-    raise NotImplementedError("Implement call_openai_mini")
+    return call_openai(
+        prompt = prompt,
+        top_p = top_p,
+        model = model,
+        max_tokens = max_tokens,
+        temperature = temperature
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +137,16 @@ def compare_models(prompt: str) -> dict:
         (0.75 words ≈ 1 token is a rough approximation)
     """
     # TODO: call call_openai and call_openai_mini, assemble and return the dict
-    raise NotImplementedError("Implement compare_models")
+    gpt4o_response, gpt4o_latency = call_openai(prompt, model = OPENAI_MODEL)
+    mini_response, mini_latency = call_openai_mini(prompt)
+    estimate_price = (len(gpt4o_response.split())/ 0.75) / 1000 * COST_PER_1K_OUTPUT_TOKENS["gpt-4o"]
+    return {
+        'gpt4o_response' : gpt4o_response,
+        'gpt4o_latency' : gpt4o_latency,
+        'mini_response' : mini_response,
+        'mini_latency' : mini_latency,
+        'estimate_price' : estimate_price,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -135,8 +171,30 @@ def streaming_chatbot() -> None:
         - Trim history to the last 3 turns: history = history[-3:]
     """
     # TODO: enter while-loop, read user input, stream response, maintain history
-    raise NotImplementedError("Implement streaming_chatbot")
+    client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
+    while True:
+        user_input = input("\nYou: ").strip()
+        if user_input.lower() in ["quit", "exit"]:
+            print("Goodbye!")
+            break
+        if not user_input:
+            continue
+
+        print("Assistant: ", end="", flush=True)
+
+        stream = client.responses.stream(
+            model="gpt-4o-mini",
+            input=user_input,
+            store=True   # bật nhớ hội thoại server-side
+        )
+
+        assistant_reply = ""
+        for event in stream:
+            if event.type == "response.output_text.delta":
+                print(event.delta, end="", flush=True)
+                assistant_reply += event.delta
+        print()
 
 # ---------------------------------------------------------------------------
 # Bonus Task A — Retry with exponential backoff
